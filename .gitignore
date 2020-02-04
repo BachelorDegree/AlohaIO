@@ -1,3 +1,8 @@
+# User-defined
+build
+test
+.vscode
+
 # Prerequisites
 *.d
 
