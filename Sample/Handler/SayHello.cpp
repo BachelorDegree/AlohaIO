@@ -1,5 +1,10 @@
 #include "SayHello.hpp"
 
+void SayHelloHandler::SetInterfaceName(void)
+{
+    interfaceName = "HelloService.SayHello";
+}
+
 void SayHelloHandler::Proceed(void)
 {
     switch (status)

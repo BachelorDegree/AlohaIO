@@ -22,6 +22,10 @@ public:
         status(Status::CREATE), cq(cq) { }
 
     virtual void Proceed(void) = 0;
+
+    virtual void       SetInterfaceName(void) = 0;
+    const std::string& GetInterfaceName(void) const { return interfaceName; }
+    
     void SetStatusCreate(void) { status = Status::CREATE; }
     void SetStatusProcess(void) { status = Status::PROCESS; }
     void SetStatusFinish(void) { status = Status::FINISH; }
@@ -30,6 +34,7 @@ protected:
     Status                          status;
     grpc::ServerCompletionQueue*    cq;
     grpc::ServerContext             ctx;
+    std::string                     interfaceName;
     // You should add (when inherit from this):
     // YourRpcRequestPB                                     request;
     // YourRpcResponsePB                                    response;

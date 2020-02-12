@@ -12,6 +12,7 @@ public:
         this->Proceed();
     }
     void Proceed(void) override;
+    void SetInterfaceName(void) override;
 
 private:
     HelloService::AsyncService*                     service;

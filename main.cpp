@@ -136,5 +136,10 @@ void DoServer(void)
 
     server->Shutdown();
     for (auto &i : completionQueues)
+    {
+        bool ok;
+        void *tag;
+        while (i->Next(&tag, &ok));
         i->Shutdown();
+    }
 }
