@@ -13,6 +13,7 @@ LINK_LIBRARIES(dl pthread protobuf gpr grpc++ grpc++_reflection)
 
 SET(APP_SOURCES "./main.cpp")
 FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Util/*.cpp")
+FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Common/*.cc")
 FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Common/*.cpp")
 
 ADD_EXECUTABLE(alohad ${APP_SOURCES})
