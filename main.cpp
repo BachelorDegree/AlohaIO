@@ -16,8 +16,11 @@
 #include "Sample/dylib_export.h"
 #include "Sample/AsyncRpcHandler.hpp"
 #include "Common/TfcConfigCodec.hpp"
+
 #include "CoreDeps/libco/co_closure.h"
 #include "CoreDeps/libco/co_routine.h"
+
+#include "Common/SatelliteClient.hpp"
 AlohaIO::TfcConfigCodec MainConf;
 
 void DoServer(void);
@@ -116,16 +119,34 @@ int main(int argc, char *argv[])
 
 void DoServer(void)
 {
+    // Name service
+    if (MainConf.HasSection("satellite"))
+    {
+        fprintf(stdout, "Satellite server count: %lu\n", MainConf.GetSection("satellite\\servers").Pairs.size());
+        for (auto &i : MainConf.GetSection("satellite\\servers").Pairs)
+        {
+            SatelliteClient::GetInstance().SetServer(i.Value);
+        }
+    }
+
     grpc::ServerBuilder builder;
 
     auto listenIpPort = MainConf.GetKV("server", "bind_ip").append(":").append(MainConf.GetKV("server", "bind_port"));
     builder.AddListeningPort(listenIpPort, grpc::InsecureServerCredentials());
-    for (const auto &i : MainConf.GetSection("libs").Pairs)
+    for (const auto &bizlib : MainConf.GetSection("libs").Children)
     {
-        auto init = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_DylibInit)>(i.Key, "EXPORT_DylibInit");
-        auto getService = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_GetGrpcServiceInstance)>(i.Key, "EXPORT_GetGrpcServiceInstance");
-        init();
+        auto libname = bizlib.Tag;
+        auto init = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_DylibInit)>(libname, "EXPORT_DylibInit");
+        auto getService = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_GetGrpcServiceInstance)>(libname, "EXPORT_GetGrpcServiceInstance");
+        auto bindSatellite = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_BindSatelliteInstance)>(libname, "EXPORT_BindSatelliteInstance");
+        auto conf_file = MainConf.GetKV(string("libs\\").append(libname).c_str(), "config_file");
+        init(conf_file.c_str());
         builder.RegisterService(getService());
+        bindSatellite(&SatelliteClient::GetInstance());
+
+        auto service_name = MainConf.GetKV(string("libs\\").append(libname).c_str(), "canonical_service_name");
+        auto network_interface = MainConf.GetKV("satellite", "bind_interface");
+        SatelliteClient::GetInstance().RegisterLocalService(service_name, network_interface, MainConf.GetKV("server", "bind_port"));
     }
 
     // Start threads and register handlers (from dylib)
@@ -140,7 +161,8 @@ void DoServer(void)
 
     for (int _i = 0; _i < threadNum; ++_i)
     {
-        threads[_i] = std::thread([&, _i]() {
+        threads[_i] = std::thread([&, _i]()
+        {
             // Bind RPC handlers
             for (const auto &i : MainConf.GetSection("libs").Pairs)
             {
