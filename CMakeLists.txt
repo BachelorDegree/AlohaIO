@@ -9,15 +9,13 @@ ENDIF(CMAKE_BUILD_TYPE MATCHES DEBUG)
 
 # INCLUDE_DIRECTORIES(./include)
 INCLUDE_DIRECTORIES(.)
-add_subdirectory(./CoreDeps/libco)
+add_subdirectory(./CoreDeps)
 LINK_LIBRARIES(dl pthread protobuf gpr grpc++ grpc++_reflection colib_static)
-
-
-
 
 SET(APP_SOURCES "./main.cpp")
 FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Util/*.cpp")
-FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Common/*.cc")
 FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Common/*.cpp")
 
 ADD_EXECUTABLE(alohad ${APP_SOURCES})
+TARGET_LINK_LIBRARIES(alohad coredeps)
+

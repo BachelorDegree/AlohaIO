@@ -20,7 +20,7 @@
 #include "CoreDeps/libco/co_closure.h"
 #include "CoreDeps/libco/co_routine.h"
 
-#include "Common/SatelliteClient.hpp"
+#include "CoreDeps/include/SatelliteClient.hpp"
 AlohaIO::TfcConfigCodec MainConf;
 
 void DoServer(void);
