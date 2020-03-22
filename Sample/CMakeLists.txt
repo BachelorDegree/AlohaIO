@@ -14,3 +14,5 @@ FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Proto/*.cc")
 FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Handler/*.cpp")
 
 ADD_LIBRARY(sample SHARED ${APP_SOURCES})
+
+ADD_EXECUTABLE(hello_client client.cpp Proto/hello.pb.cc Proto/hello.grpc.pb.cc)
