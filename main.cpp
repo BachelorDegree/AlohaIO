@@ -3,7 +3,8 @@
 #include <csignal>
 #include <cstdlib>
 #include <unistd.h>
-
+#include <stack>
+#include <grpc/impl/codegen/gpr_types.h>
 #include <grpc/grpc.h>
 #include <grpcpp/server.h>
 #include <grpcpp/server_builder.h>
@@ -15,10 +16,39 @@
 #include "Sample/dylib_export.h"
 #include "Sample/AsyncRpcHandler.hpp"
 #include "Common/TfcConfigCodec.hpp"
-
+#include "CoreDeps/libco/co_closure.h"
+#include "CoreDeps/libco/co_routine.h"
 AlohaIO::TfcConfigCodec MainConf;
 
 void DoServer(void);
+struct co_worker_t
+{
+    stCoRoutine_t *co;
+    AsyncRpcHandler *pHandler;
+    std::shared_ptr<std::stack<co_worker_t *>> pStack;
+};
+struct co_control_t
+{
+    std::shared_ptr<std::stack<co_worker_t *>> pFreeWorkerStack;
+    std::shared_ptr<grpc::ServerCompletionQueue> pCq;
+};
+void *co_worker_func(void *arg)
+{
+    co_enable_hook_sys();
+    co_worker_t *pWorker = reinterpret_cast<co_worker_t *>(arg);
+    while (true)
+    {
+        if (pWorker->pHandler == nullptr)
+        {
+            //no work, sleep
+            co_yield_ct();
+            continue;
+        }
+        pWorker->pHandler->Proceed();
+        pWorker->pHandler = nullptr;
+        pWorker->pStack->push(pWorker);
+    }
+}
 
 int main(int argc, char *argv[])
 {
@@ -30,7 +60,7 @@ int main(int argc, char *argv[])
             AlohaIO::PrintUsage(argv[0]);
             break;
         }
-        
+
         int ret = MainConf.ParseFile(argv[1]);
         if (ret != AlohaIO::TfcConfigCodec::SUCCESS)
         {
@@ -97,11 +127,12 @@ void DoServer(void)
         init();
         builder.RegisterService(getService());
     }
-    
+
     // Start threads and register handlers (from dylib)
     auto threadNum = atoi(MainConf.GetKV("server", "worker_thread_num").c_str());
-    std::vector<std::thread>                                    threads(threadNum);
-    std::vector<std::unique_ptr<grpc::ServerCompletionQueue>>   completionQueues;
+    auto coNum = atoi(MainConf.GetKV("server", "worker_co_num").c_str());
+    std::vector<std::thread> threads(threadNum);
+    std::vector<std::shared_ptr<grpc::ServerCompletionQueue>> completionQueues;
     for (int _i = 0; _i < threadNum; ++_i)
         completionQueues.push_back(builder.AddCompletionQueue());
 
@@ -109,26 +140,62 @@ void DoServer(void)
 
     for (int _i = 0; _i < threadNum; ++_i)
     {
-        threads[_i] = std::thread([&, _i]()
-        {
-            
+        threads[_i] = std::thread([&, _i]() {
             // Bind RPC handlers
             for (const auto &i : MainConf.GetSection("libs").Pairs)
             {
                 auto workerFunc = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnWorkerThreadStart)>(i.Key, "EXPORT_OnWorkerThreadStart");
                 workerFunc(completionQueues[_i].get());
             }
-            // Loop
-            for ( ; ;)
+            // Initial co workers
+
+            co_control_t oControl;
+            oControl.pCq = completionQueues[_i];
+            oControl.pFreeWorkerStack = std::make_shared<std::stack<co_worker_t *>>();
+            std::vector<co_worker_t> vecWorkers;
+            vecWorkers.resize(coNum);
+            for (int j = 0; j < coNum; j++)
             {
+                vecWorkers[j].pHandler = nullptr;
+                vecWorkers[j].pStack = oControl.pFreeWorkerStack;
+                oControl.pFreeWorkerStack->push(&vecWorkers[j]);
+                co_create(&vecWorkers[j].co, 0, co_worker_func, (void *)&vecWorkers[j]);
+                co_resume(vecWorkers[j].co);
+            }
+            // Start event loop to accept (without hook sys function)
+            // TODO: may be use sys hook to have better performance?
+            stCoEpoll_t *ev = co_get_epoll_ct();
+            co_eventloop(ev, [](void *arg) -> int {
+                co_control_t *pControl = reinterpret_cast<co_control_t *>(arg);
+                if (pControl->pFreeWorkerStack->empty())
+                {
+                    return 0;
+                }
                 bool ok;
                 void *tag;
-                if (completionQueues[_i]->Next(&tag, &ok) == false)
+
+                switch (pControl->pCq->AsyncNext(&tag, &ok, gpr_timespec{0, 100, GPR_TIMESPAN}))
+                {
+                case grpc::CompletionQueue::NextStatus::GOT_EVENT:
+                {
+
+                    GPR_ASSERT(ok == true);
+                    GPR_ASSERT(tag != nullptr);
+                    stCoEpoll_t *ev = co_get_epoll_ct();
+                    auto pWorker = pControl->pFreeWorkerStack->top();
+                    pControl->pFreeWorkerStack->pop();
+                    GPR_ASSERT(pWorker->pHandler == nullptr);
+                    pWorker->pHandler = reinterpret_cast<AsyncRpcHandler *>(tag);
+                    co_resume(pWorker->co);
+                }
+                break;
+                case grpc::CompletionQueue::NextStatus::SHUTDOWN:
+                    return -1;
+                case grpc::CompletionQueue::NextStatus::TIMEOUT:
                     break;
-                GPR_ASSERT(ok == true);
-                GPR_ASSERT(tag != nullptr);
-                reinterpret_cast<AsyncRpcHandler*>(tag)->Proceed();
-            }
+                }
+            },
+                         (void *)&oControl);
         });
     }
     for (auto &&t : threads)
@@ -139,7 +206,8 @@ void DoServer(void)
     {
         bool ok;
         void *tag;
-        while (i->Next(&tag, &ok));
+        while (i->Next(&tag, &ok))
+            ;
         i->Shutdown();
     }
 }
