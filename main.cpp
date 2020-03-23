@@ -161,64 +161,79 @@ void DoServer(void)
 
     for (int _i = 0; _i < threadNum; ++_i)
     {
-        threads[_i] = std::thread([&, _i]()
-        {
+        threads[_i] = std::thread([&, _i]() {
             // Bind RPC handlers
             for (const auto &i : MainConf.GetSection("libs").Pairs)
             {
                 auto workerFunc = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnWorkerThreadStart)>(i.Key, "EXPORT_OnWorkerThreadStart");
                 workerFunc(completionQueues[_i].get());
             }
-            // Initial co workers
-
-            co_control_t oControl;
-            oControl.pCq = completionQueues[_i];
-            oControl.pFreeWorkerStack = std::make_shared<std::stack<co_worker_t *>>();
-            std::vector<co_worker_t> vecWorkers;
-            vecWorkers.resize(coNum);
-            for (int j = 0; j < coNum; j++)
+            if (coNum <= 0)
             {
-                vecWorkers[j].pHandler = nullptr;
-                vecWorkers[j].pStack = oControl.pFreeWorkerStack;
-                oControl.pFreeWorkerStack->push(&vecWorkers[j]);
-                co_create(&vecWorkers[j].co, 0, co_worker_func, (void *)&vecWorkers[j]);
-                co_resume(vecWorkers[j].co);
-            }
-            // Start event loop to accept (without hook sys function)
-            // TODO: may be use sys hook to have better performance?
-            stCoEpoll_t *ev = co_get_epoll_ct();
-            co_eventloop(ev, [](void *arg) -> int {
-                co_control_t *pControl = reinterpret_cast<co_control_t *>(arg);
-                if (pControl->pFreeWorkerStack->empty())
+                //no co mode
+                for (;;)
                 {
-                    return 0;
-                }
-                bool ok;
-                void *tag;
-
-                switch (pControl->pCq->AsyncNext(&tag, &ok, gpr_timespec{0, 100, GPR_TIMESPAN}))
-                {
-                case grpc::CompletionQueue::NextStatus::GOT_EVENT:
-                {
-
+                    bool ok;
+                    void *tag;
+                    if (completionQueues[_i]->Next(&tag, &ok) == false)
+                        break;
                     GPR_ASSERT(ok == true);
                     GPR_ASSERT(tag != nullptr);
-                    stCoEpoll_t *ev = co_get_epoll_ct();
-                    auto pWorker = pControl->pFreeWorkerStack->top();
-                    pControl->pFreeWorkerStack->pop();
-                    GPR_ASSERT(pWorker->pHandler == nullptr);
-                    pWorker->pHandler = reinterpret_cast<AsyncRpcHandler *>(tag);
-                    co_resume(pWorker->co);
+                    reinterpret_cast<AsyncRpcHandler *>(tag)->Proceed();
                 }
-                break;
-                case grpc::CompletionQueue::NextStatus::SHUTDOWN:
-                    return -1;
-                case grpc::CompletionQueue::NextStatus::TIMEOUT:
+            }
+            else
+            {
+                // Initial co workers
+                co_control_t oControl;
+                oControl.pCq = completionQueues[_i];
+                oControl.pFreeWorkerStack = std::make_shared<std::stack<co_worker_t *>>();
+                std::vector<co_worker_t> vecWorkers;
+                vecWorkers.resize(coNum);
+                for (int j = 0; j < coNum; j++)
+                {
+                    vecWorkers[j].pHandler = nullptr;
+                    vecWorkers[j].pStack = oControl.pFreeWorkerStack;
+                    oControl.pFreeWorkerStack->push(&vecWorkers[j]);
+                    co_create(&vecWorkers[j].co, 0, co_worker_func, (void *)&vecWorkers[j]);
+                    co_resume(vecWorkers[j].co);
+                }
+                // Start event loop to accept (without hook sys function)
+                // TODO: may be use sys hook to have better performance?
+                stCoEpoll_t *ev = co_get_epoll_ct();
+                co_eventloop(ev, [](void *arg) -> int {
+                    co_control_t *pControl = reinterpret_cast<co_control_t *>(arg);
+                    if (pControl->pFreeWorkerStack->empty())
+                    {
+                        return 0;
+                    }
+                    bool ok;
+                    void *tag;
+
+                    switch (pControl->pCq->AsyncNext(&tag, &ok, gpr_timespec{0, 100, GPR_TIMESPAN}))
+                    {
+                    case grpc::CompletionQueue::NextStatus::GOT_EVENT:
+                    {
+
+                        GPR_ASSERT(ok == true);
+                        GPR_ASSERT(tag != nullptr);
+                        stCoEpoll_t *ev = co_get_epoll_ct();
+                        auto pWorker = pControl->pFreeWorkerStack->top();
+                        pControl->pFreeWorkerStack->pop();
+                        GPR_ASSERT(pWorker->pHandler == nullptr);
+                        pWorker->pHandler = reinterpret_cast<AsyncRpcHandler *>(tag);
+                        co_resume(pWorker->co);
+                    }
                     break;
-                }
-                return 0;
-            },
-                         (void *)&oControl);
+                    case grpc::CompletionQueue::NextStatus::SHUTDOWN:
+                        return -1;
+                    case grpc::CompletionQueue::NextStatus::TIMEOUT:
+                        break;
+                    }
+                    return 0;
+                },
+                             (void *)&oControl);
+            }
         });
     }
     for (auto &&t : threads)
