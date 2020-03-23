@@ -170,7 +170,7 @@ void DoServer(void)
             }
             if (coNum <= 0)
             {
-                //no co mode
+                //no coroutine mode
                 for (;;)
                 {
                     bool ok;
@@ -184,7 +184,7 @@ void DoServer(void)
             }
             else
             {
-                // Initial co workers
+                // Initialize co workers
                 co_control_t oControl;
                 oControl.pCq = completionQueues[_i];
                 oControl.pFreeWorkerStack = std::make_shared<std::stack<co_worker_t *>>();
