@@ -216,6 +216,7 @@ void DoServer(void)
                 case grpc::CompletionQueue::NextStatus::TIMEOUT:
                     break;
                 }
+                return 0;
             },
                          (void *)&oControl);
         });
