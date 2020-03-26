@@ -8,9 +8,9 @@ IF(CMAKE_BUILD_TYPE MATCHES DEBUG)
 ENDIF(CMAKE_BUILD_TYPE MATCHES DEBUG)
 
 # INCLUDE_DIRECTORIES(./include)
-INCLUDE_DIRECTORIES(.)
 add_subdirectory(./CoreDeps)
-LINK_LIBRARIES(dl pthread protobuf gpr grpc++ grpc++_reflection colib_static)
+INCLUDE_DIRECTORIES(/usr/local/include)
+LINK_LIBRARIES(dl pthread protobuf gpr grpc++ grpc++_reflection colib)
 
 SET(APP_SOURCES "./main.cpp")
 FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Util/*.cpp")

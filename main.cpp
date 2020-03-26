@@ -17,8 +17,7 @@
 #include "Sample/AsyncRpcHandler.hpp"
 #include "Common/TfcConfigCodec.hpp"
 
-#include "CoreDeps/libco/co_closure.h"
-#include "CoreDeps/libco/co_routine.h"
+#include <colib/co_routine.h>
 
 #include "CoreDeps/include/SatelliteClient.hpp"
 AlohaIO::TfcConfigCodec MainConf;
