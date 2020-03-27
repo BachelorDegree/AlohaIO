@@ -135,6 +135,7 @@ void DoServer(void)
     for (const auto &bizlib : MainConf.GetSection("libs").Children)
     {
         auto libname = bizlib.Tag;
+        AlohaIO::DylibManager::GetInstance().LoadLibrary(MainConf.GetKV(string("libs\\").append(libname).c_str(), "dylib_path"), libname);
         auto init = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_DylibInit)>(libname, "EXPORT_DylibInit");
         auto getService = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_GetGrpcServiceInstance)>(libname, "EXPORT_GetGrpcServiceInstance");
         auto bindSatellite = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_BindSatelliteInstance)>(libname, "EXPORT_BindSatelliteInstance");

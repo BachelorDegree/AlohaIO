@@ -11,7 +11,7 @@ const char * EXPORT_Description(void)
     return "Sample Business Library";
 }
 
-void EXPORT_DylibInit(void)
+void EXPORT_DylibInit(const char *conf_file)
 {
     // do nothing
 }
