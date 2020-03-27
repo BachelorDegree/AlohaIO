@@ -163,9 +163,9 @@ void DoServer(void)
     {
         threads[_i] = std::thread([&, _i]() {
             // Bind RPC handlers
-            for (const auto &i : MainConf.GetSection("libs").Pairs)
+            for (const auto &i : MainConf.GetSection("libs").Children)
             {
-                auto workerFunc = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnWorkerThreadStart)>(i.Key, "EXPORT_OnWorkerThreadStart");
+                auto workerFunc = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnWorkerThreadStart)>(i.Tag, "EXPORT_OnWorkerThreadStart");
                 workerFunc(completionQueues[_i].get());
             }
             if (coNum <= 0)
