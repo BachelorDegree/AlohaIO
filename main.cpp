@@ -17,6 +17,7 @@
 #include "Sample/AsyncRpcHandler.hpp"
 #include "Common/TfcConfigCodec.hpp"
 
+#include <colib/co_aio.h>
 #include <colib/co_routine.h>
 
 #include "CoreDeps/include/SatelliteClient.hpp"
@@ -170,8 +171,8 @@ void DoServer(void)
             }
             if (coNum <= 0)
             {
-                //no coroutine mode
-                for (;;)
+                // No coroutine mode
+                for ( ; ;)
                 {
                     bool ok;
                     void *tag;
@@ -190,6 +191,7 @@ void DoServer(void)
                 oControl.pFreeWorkerStack = std::make_shared<std::stack<co_worker_t *>>();
                 std::vector<co_worker_t> vecWorkers;
                 vecWorkers.resize(coNum);
+                co_aio_init_ct(); // Initialize colib AIO
                 for (int j = 0; j < coNum; j++)
                 {
                     vecWorkers[j].pHandler = nullptr;
@@ -214,7 +216,6 @@ void DoServer(void)
                     {
                     case grpc::CompletionQueue::NextStatus::GOT_EVENT:
                     {
-
                         GPR_ASSERT(ok == true);
                         GPR_ASSERT(tag != nullptr);
                         stCoEpoll_t *ev = co_get_epoll_ct();
@@ -223,16 +224,15 @@ void DoServer(void)
                         GPR_ASSERT(pWorker->pHandler == nullptr);
                         pWorker->pHandler = reinterpret_cast<AsyncRpcHandler *>(tag);
                         co_resume(pWorker->co);
+                        break;
                     }
-                    break;
                     case grpc::CompletionQueue::NextStatus::SHUTDOWN:
                         return -1;
                     case grpc::CompletionQueue::NextStatus::TIMEOUT:
                         break;
                     }
                     return 0;
-                },
-                             (void *)&oControl);
+                }, (void *)&oControl);
             }
         });
     }
