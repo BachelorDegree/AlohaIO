@@ -7,6 +7,7 @@
 #include <thread>
 #include <ctime>
 #include <grpcpp/security/credentials.h>
+#include "CoreDeps/AlohaIO/ContextHelper.hpp"
 #include "Proto/hello.grpc.pb.h"
 #include "Proto/hello.pb.h"
 void run(){
@@ -17,7 +18,7 @@ void run(){
   HelloResponse oResp;
   oReq.set_greeting("hhhh");
   oStub.SayHello(&oContext, oReq, &oResp);
-  std::cout<<oResp.ShortDebugString()<<std::endl;
+  std::cout<<oResp.ShortDebugString()<< ClientContextHelper(oContext).GetReturnCode() <<std::endl;
 }
 int main(){
   time_t oBegin = time(nullptr);

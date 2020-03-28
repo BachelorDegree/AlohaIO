@@ -6,7 +6,7 @@ SET(CMAKE_CXX_FLAGS "-Wall")
 IF(CMAKE_BUILD_TYPE MATCHES DEBUG)
     SET(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-DDEBUG")
 ENDIF(CMAKE_BUILD_TYPE MATCHES DEBUG)
-
+add_subdirectory(./CoreDeps)
 LINK_LIBRARIES(pthread protobuf gpr grpc++ grpc++_reflection)
 
 SET(APP_SOURCES "./dylib.cpp")
@@ -16,3 +16,5 @@ FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Handler/*.cpp")
 ADD_LIBRARY(sample SHARED ${APP_SOURCES})
 
 ADD_EXECUTABLE(hello_client client.cpp Proto/hello.pb.cc Proto/hello.grpc.pb.cc)
+TARGET_LINK_LIBRARIES(sample coredeps)
+TARGET_LINK_LIBRARIES(hello_client coredeps)

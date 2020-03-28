@@ -1,5 +1,5 @@
 #include "dylib_export.h"
-// #include "SatelliteClient.h"
+#include "CoreDeps/include/SatelliteClient.hpp"
 #include "Proto/hello.grpc.pb.h"
 
 #include "Handler/SayHello.hpp"
@@ -29,5 +29,5 @@ void EXPORT_OnWorkerThreadStart(grpc::ServerCompletionQueue *cq)
 
 void EXPORT_BindSatelliteInstance(SatelliteClient *i)
 {
-    // SatelliteClient::SetInstance(i);
+    SatelliteClient::SetInstance(i);
 }

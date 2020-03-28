@@ -18,8 +18,10 @@
 #include "Common/TfcConfigCodec.hpp"
 
 #include <colib/co_routine.h>
-
+#include <colib/co_routine_inner.h>
+#include <colib/co_routine_specific.h>
 #include "CoreDeps/include/SatelliteClient.hpp"
+#include "CoreDeps/AlohaIO/ContextHelper.hpp"
 AlohaIO::TfcConfigCodec MainConf;
 
 void DoServer(void);
@@ -38,6 +40,7 @@ void *co_worker_func(void *arg)
 {
     co_enable_hook_sys();
     co_worker_t *pWorker = reinterpret_cast<co_worker_t *>(arg);
+    ServerContextHelper::SetInstance(new ServerContextHelper);
     while (true)
     {
         if (pWorker->pHandler == nullptr)
@@ -184,6 +187,7 @@ void DoServer(void)
             }
             else
             {
+                CoRoutineSetSpecificCallback([](pthread_key_t key) -> void * { return co_getspecific(key); }, [](pthread_key_t key, const void *value) -> int { return co_setspecific(key, value); });
                 // Initialize co workers
                 co_control_t oControl;
                 oControl.pCq = completionQueues[_i];
