@@ -1,11 +1,14 @@
 #pragma once
-#include "pool.h"
+#include <poll.h>
 #include "Proto/hello.pb.h"
 class SayHelloServiceImpl{
   public:
     static SayHelloServiceImpl *GetInstance();
     static void SetInstance(SayHelloServiceImpl *);
-    int OnServerStart(){
+    static int BeforeServerStart(const char * czConf) {
+      return 0;
+    }
+    int BeforeWorkerStart() {
       return 0;
     }
     int SayHello(const HelloRequest & oReq, HelloResponse & oResp){

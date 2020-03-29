@@ -12,7 +12,7 @@ const char * EXPORT_Description(void)
 
 void EXPORT_DylibInit(const char *conf_file)
 {
-    // do nothing
+    SayHelloServiceImpl::BeforeServerStart(conf_file);
 }
 
 grpc::Service * EXPORT_GetGrpcServiceInstance(void)
@@ -23,7 +23,7 @@ grpc::Service * EXPORT_GetGrpcServiceInstance(void)
 void EXPORT_OnWorkerThreadStart(grpc::ServerCompletionQueue *cq)
 {
     SayHelloServiceImpl::SetInstance(new SayHelloServiceImpl);
-    SayHelloServiceImpl::GetInstance()->OnServerStart();
+    SayHelloServiceImpl::GetInstance()->BeforeWorkerStart();
     // Bind handlers
     new SayHelloHandler(&service, cq);
 }
