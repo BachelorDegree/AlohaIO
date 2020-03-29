@@ -172,6 +172,7 @@ void DoServer(void)
             }
             if (coNum <= 0)
             {
+                ServerContextHelper::SetInstance(new ServerContextHelper);
                 // No coroutine mode
                 for ( ; ;)
                 {
