@@ -7,8 +7,6 @@ IF(CMAKE_BUILD_TYPE MATCHES DEBUG)
     SET(CMAKE_CXX_FLAGS ${CMAKE_CXX_FLAGS} "-DDEBUG")
 ENDIF(CMAKE_BUILD_TYPE MATCHES DEBUG)
 
-# INCLUDE_DIRECTORIES(./include)
-add_subdirectory(./CoreDeps)
 INCLUDE_DIRECTORIES(/usr/local/include)
 LINK_LIBRARIES(dl pthread protobuf gpr grpc++ grpc++_reflection colib)
 
@@ -18,4 +16,3 @@ FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Common/*.cpp")
 
 ADD_EXECUTABLE(alohad ${APP_SOURCES})
 TARGET_LINK_LIBRARIES(alohad coredeps)
-

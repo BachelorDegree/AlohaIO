@@ -139,11 +139,9 @@ void DoServer(void)
         AlohaIO::DylibManager::GetInstance().LoadLibrary(MainConf.GetKV(string("libs\\").append(libname).c_str(), "dylib_path"), libname);
         auto init = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_DylibInit)>(libname, "EXPORT_DylibInit");
         auto getService = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_GetGrpcServiceInstance)>(libname, "EXPORT_GetGrpcServiceInstance");
-        auto bindSatellite = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_BindSatelliteInstance)>(libname, "EXPORT_BindSatelliteInstance");
         auto conf_file = MainConf.GetKV(string("libs\\").append(libname).c_str(), "config_file");
         init(conf_file.c_str());
         builder.RegisterService(getService());
-        bindSatellite(&SatelliteClient::GetInstance());
 
         auto service_name = MainConf.GetKV(string("libs\\").append(libname).c_str(), "canonical_service_name");
         auto network_interface = MainConf.GetKV("satellite", "bind_interface");
