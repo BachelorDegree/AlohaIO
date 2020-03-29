@@ -8,11 +8,13 @@ IF(CMAKE_BUILD_TYPE MATCHES DEBUG)
 ENDIF(CMAKE_BUILD_TYPE MATCHES DEBUG)
 
 INCLUDE_DIRECTORIES(/usr/local/include)
+INCLUDE_DIRECTORIES(.)
 LINK_LIBRARIES(pthread protobuf gpr grpc++ grpc++_reflection)
 
 SET(APP_SOURCES "./dylib.cpp")
 FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Proto/*.cc")
 FILE(GLOB APP_SOURCES ${APP_SOURCES} "./Handler/*.cpp")
+FILE(GLOB APP_SOURCES ${APP_SOURCES} "./SayHelloServiceImplInstance.cpp")
 
 ADD_LIBRARY(sample SHARED ${APP_SOURCES})
 

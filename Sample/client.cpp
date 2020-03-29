@@ -16,12 +16,14 @@ void run(){
   grpc::ClientContext oContext;
   HelloRequest oReq;
   HelloResponse oResp;
-  oReq.set_greeting("hhhh");
+
+  oReq.set_greeting(std::to_string(rand()));
   oStub.SayHello(&oContext, oReq, &oResp);
   std::cout<<oResp.ShortDebugString()<< ClientContextHelper(oContext).GetReturnCode() <<std::endl;
 }
 int main(){
   time_t oBegin = time(nullptr);
+  srand(time(nullptr));
   std::vector<std::thread>                                    threads(100);
   for(int i=0;i<100;i++){
     threads[i] = std::thread(run);
