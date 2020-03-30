@@ -4,8 +4,9 @@
 #include <cstdlib>
 #include <unistd.h>
 #include <stack>
-#include <grpc/impl/codegen/gpr_types.h>
 #include <grpc/grpc.h>
+#include <grpc/impl/codegen/gpr_types.h>
+#include <spdlog/spdlog.h>
 #include <grpcpp/server.h>
 #include <grpcpp/server_builder.h>
 #include <grpcpp/server_context.h>
@@ -23,9 +24,11 @@
 #include "coredeps/ContextHelper.hpp"
 #include "coredeps/TfcConfigCodec.hpp"
 #include "coredeps/SatelliteClient.hpp"
+
 AlohaIO::TfcConfigCodec MainConf;
 
 void DoServer(void);
+
 struct co_worker_t
 {
     stCoRoutine_t *co;
@@ -58,7 +61,7 @@ void *co_worker_func(void *arg)
 
 int main(int argc, char *argv[])
 {
-    int MainRet = EXIT_FAILURE;
+    int iMainRet = EXIT_FAILURE;
     do
     {
         if (argc == 1)
@@ -67,57 +70,45 @@ int main(int argc, char *argv[])
             break;
         }
 
-        int ret = MainConf.ParseFile(argv[1]);
-        if (ret != AlohaIO::TfcConfigCodec::SUCCESS)
+        int iRet = MainConf.ParseFile(argv[1]);
+        if (iRet != AlohaIO::TfcConfigCodec::SUCCESS)
         {
-            fprintf(stderr, "Parse %s failed, retcode: %d\n", argv[1], ret);
+            spdlog::error("Parse {} failed, retcode: {}", argv[1], iRet);
             break;
         }
 
         if (!MainConf.HasSection("libs"))
         {
-            fprintf(stderr, "%s doesn't have section `libs`\n", argv[1]);
+            spdlog::error("{} doesn't have section `libs`", argv[1]);
             break;
-        }
-
-        for (const auto &i : MainConf.GetSection("libs").Pairs)
-        {
-            AlohaIO::DylibManager::GetInstance().LoadLibrary(i.Value, i.Key);
-            auto desc = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_Description)>(i.Key, "EXPORT_Description");
-            if (desc == nullptr)
-            {
-                fprintf(stderr, "Cannot find symbol `EXPORT_Description` in %s\n", i.Value.c_str());
-                break;
-            }
-            fprintf(stdout, "Dylib %s (path: %s) loaded, description: %s\n", i.Key.c_str(), i.Value.c_str(), desc());
         }
 
         if (argc > 2) // not daemon
         {
-            fprintf(stdout, "%s: foreground mode\n", argv[0]);
+            spdlog::info("{}: foreground mode", argv[0]);
             DoServer();
         }
         else // daemon
         {
-            fprintf(stdout, "%s: daemon mode\n", argv[0]);
-            auto pid = fork();
-            if (pid == -1)
+            spdlog::info("{}: daemon mode", argv[0]);
+            auto iPid = fork();
+            if (iPid == -1)
             {
-                fprintf(stderr, "%s", "fork() failed!");
+                spdlog::error("fork() failed!");
                 break;
             }
-            if (pid != 0) // parent
+            if (iPid != 0) // parent
                 break;
             if (setsid() == -1)
             {
-                fprintf(stderr, "%s", "setsid() failed!");
+                spdlog::error("setsid() failed!");
                 break;
             }
             DoServer();
         }
-        MainRet = EXIT_SUCCESS;
+        iMainRet = EXIT_SUCCESS;
     } while (false);
-    return MainRet;
+    return iMainRet;
 }
 
 void DoServer(void)
@@ -125,64 +116,72 @@ void DoServer(void)
     // Name service
     if (MainConf.HasSection("satellite"))
     {
-        fprintf(stdout, "Satellite server count: %lu\n", MainConf.GetSection("satellite\\servers").Pairs.size());
+        spdlog::info("Satellite server count: {}", MainConf.GetSection("satellite\\servers").Pairs.size());
         for (auto &i : MainConf.GetSection("satellite\\servers").Pairs)
         {
             SatelliteClient::GetInstance().SetServer(i.Value);
         }
     }
 
-    grpc::ServerBuilder builder;
+    grpc::ServerBuilder oServerBuilder;
 
-    auto listenIpPort = MainConf.GetKV("server", "bind_ip").append(":").append(MainConf.GetKV("server", "bind_port"));
-    builder.AddListeningPort(listenIpPort, grpc::InsecureServerCredentials());
-    for (const auto &bizlib : MainConf.GetSection("libs").Children)
+    auto sListenIpPort = MainConf.GetKV("server", "bind_ip").append(":").append(MainConf.GetKV("server", "bind_port"));
+    oServerBuilder.AddListeningPort(sListenIpPort, grpc::InsecureServerCredentials());
+    for (const auto &oBizLib : MainConf.GetSection("libs").Children)
     {
-        auto libname = bizlib.Tag;
-        AlohaIO::DylibManager::GetInstance().LoadLibrary(MainConf.GetKV(string("libs\\").append(libname).c_str(), "dylib_path"), libname);
-        auto init = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_DylibInit)>(libname, "EXPORT_DylibInit");
-        auto getService = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_GetGrpcServiceInstance)>(libname, "EXPORT_GetGrpcServiceInstance");
-        auto conf_file = MainConf.GetKV(string("libs\\").append(libname).c_str(), "config_file");
-        init(conf_file.c_str());
-        builder.RegisterService(getService());
+        auto sLibraryName = oBizLib.Tag;
+        auto sDylibPath = MainConf.GetKV(string("libs\\").append(sLibraryName).c_str(), "dylib_path");
+        AlohaIO::DylibManager::GetInstance().LoadLibrary(sDylibPath, sLibraryName);
+        auto pfDescription = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_Description)>(sLibraryName, "EXPORT_Description");
+        if (pfDescription == nullptr)
+        {
+            spdlog::error("Cannot find symbol `EXPORT_Description` in {}", sDylibPath);
+            break;
+        }
+        spdlog::info("Dylib {} (path: {}) loaded, description: {}", sLibraryName, sDylibPath, pfDescription());
+        auto pfDylibInit = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_DylibInit)>(sLibraryName, "EXPORT_DylibInit");
+        auto pfGetServiceInstance = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_GetGrpcServiceInstance)>(sLibraryName, "EXPORT_GetGrpcServiceInstance");
+        auto sConfigFile = MainConf.GetKV(string("libs\\").append(sLibraryName).c_str(), "config_file");
+        pfDylibInit(sConfigFile.c_str());
+        oServerBuilder.RegisterService(pfGetServiceInstance());
 
-        auto service_name = MainConf.GetKV(string("libs\\").append(libname).c_str(), "canonical_service_name");
-        auto network_interface = MainConf.GetKV("satellite", "bind_interface");
-        SatelliteClient::GetInstance().RegisterLocalService(service_name, network_interface, MainConf.GetKV("server", "bind_port"));
+        auto sCanonicalServiceName = MainConf.GetKV(string("libs\\").append(sLibraryName).c_str(), "canonical_service_name");
+        auto sNetworkInterface = MainConf.GetKV("satellite", "bind_interface");
+        SatelliteClient::GetInstance().RegisterLocalService(sCanonicalServiceName, sNetworkInterface, MainConf.GetKV("server", "bind_port"));
     }
 
     // Start threads and register handlers (from dylib)
-    auto threadNum = atoi(MainConf.GetKV("server", "worker_thread_num").c_str());
-    auto coNum = atoi(MainConf.GetKV("server", "worker_co_num").c_str());
-    std::vector<std::thread> threads(threadNum);
-    std::vector<std::shared_ptr<grpc::ServerCompletionQueue>> completionQueues;
-    for (int _i = 0; _i < threadNum; ++_i)
-        completionQueues.push_back(builder.AddCompletionQueue());
+    auto iThreadNum = atoi(MainConf.GetKV("server", "worker_thread_num").c_str());
+    auto iCoNum = atoi(MainConf.GetKV("server", "worker_co_num").c_str());
+    std::vector<std::thread> vecThreads(iThreadNum);
+    std::vector<std::shared_ptr<grpc::ServerCompletionQueue>> vecCompletionQueues;
+    for (int _i = 0; _i < iThreadNum; ++_i)
+        vecCompletionQueues.push_back(oServerBuilder.AddCompletionQueue());
 
-    auto server = builder.BuildAndStart();
+    auto pServer = oServerBuilder.BuildAndStart();
 
-    for (int _i = 0; _i < threadNum; ++_i)
+    for (int _i = 0; _i < iThreadNum; ++_i)
     {
-        threads[_i] = std::thread([&, _i]() {
+        vecThreads[_i] = std::thread([&, _i]() {
             // Bind RPC handlers
             for (const auto &i : MainConf.GetSection("libs").Children)
             {
-                auto workerFunc = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnWorkerThreadStart)>(i.Tag, "EXPORT_OnWorkerThreadStart");
-                workerFunc(completionQueues[_i].get());
+                auto pfOnWorkerStart = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnWorkerThreadStart)>(i.Tag, "EXPORT_OnWorkerThreadStart");
+                pfOnWorkerStart(vecCompletionQueues[_i].get());
             }
-            if (coNum <= 0)
+            if (iCoNum <= 0)
             {
                 ServerContextHelper::SetInstance(new ServerContextHelper);
                 // No coroutine mode
                 for ( ; ;)
                 {
-                    bool ok;
-                    void *tag;
-                    if (completionQueues[_i]->Next(&tag, &ok) == false)
+                    bool bOk;
+                    void *pTag;
+                    if (vecCompletionQueues[_i]->Next(&pTag, &bOk) == false)
                         break;
-                    GPR_ASSERT(ok == true);
-                    GPR_ASSERT(tag != nullptr);
-                    reinterpret_cast<AsyncRpcHandler *>(tag)->Proceed();
+                    GPR_ASSERT(bOk == true);
+                    GPR_ASSERT(pTag != nullptr);
+                    reinterpret_cast<AsyncRpcHandler *>(pTag)->Proceed();
                 }
             }
             else
@@ -190,12 +189,12 @@ void DoServer(void)
                 CoRoutineSetSpecificCallback([](pthread_key_t key) -> void * { return co_getspecific(key); }, [](pthread_key_t key, const void *value) -> int { return co_setspecific(key, value); });
                 // Initialize co workers
                 co_control_t oControl;
-                oControl.pCq = completionQueues[_i];
+                oControl.pCq = vecCompletionQueues[_i];
                 oControl.pFreeWorkerStack = std::make_shared<std::stack<co_worker_t *>>();
                 std::vector<co_worker_t> vecWorkers;
-                vecWorkers.resize(coNum);
+                vecWorkers.resize(iCoNum);
                 co_aio_init_ct(); // Initialize colib AIO
-                for (int j = 0; j < coNum; j++)
+                for (int j = 0; j < iCoNum; j++)
                 {
                     vecWorkers[j].pHandler = nullptr;
                     vecWorkers[j].pStack = oControl.pFreeWorkerStack;
@@ -213,19 +212,19 @@ void DoServer(void)
                         return 0;
                     }
                     bool ok;
-                    void *tag;
+                    void *pTag;
 
-                    switch (pControl->pCq->AsyncNext(&tag, &ok, gpr_timespec{0, 100, GPR_TIMESPAN}))
+                    switch (pControl->pCq->AsyncNext(&pTag, &ok, gpr_timespec{0, 100, GPR_TIMESPAN}))
                     {
                     case grpc::CompletionQueue::NextStatus::GOT_EVENT:
                     {
                         GPR_ASSERT(ok == true);
-                        GPR_ASSERT(tag != nullptr);
-                        stCoEpoll_t *ev = co_get_epoll_ct();
+                        GPR_ASSERT(pTag != nullptr);
+                        auto ev = co_get_epoll_ct();
                         auto pWorker = pControl->pFreeWorkerStack->top();
                         pControl->pFreeWorkerStack->pop();
                         GPR_ASSERT(pWorker->pHandler == nullptr);
-                        pWorker->pHandler = reinterpret_cast<AsyncRpcHandler *>(tag);
+                        pWorker->pHandler = reinterpret_cast<AsyncRpcHandler *>(pTag);
                         co_resume(pWorker->co);
                         break;
                     }
@@ -239,15 +238,15 @@ void DoServer(void)
             }
         });
     }
-    for (auto &&t : threads)
+    for (auto &&t : vecThreads)
         t.join();
 
-    server->Shutdown();
-    for (auto &i : completionQueues)
+    pServer->Shutdown();
+    for (auto &i : vecCompletionQueues)
     {
         bool ok;
-        void *tag;
-        while (i->Next(&tag, &ok))
+        void *pTag;
+        while (i->Next(&pTag, &ok))
             ;
         i->Shutdown();
     }
