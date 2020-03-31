@@ -43,9 +43,9 @@ struct co_control_t
 template <class T>
 int co_create(stCoRoutine_t **co, const stCoRoutineAttr_t *attr, T func)
 {
-    T* _func = new T(func);
+    T *_func = new T(func);
     return co_create(co, attr, [](void *arg) -> void * {
-        T & _func = *reinterpret_cast<T *>(arg);
+        T &_func = *reinterpret_cast<T *>(arg);
         _func();
         delete &_func;
         return 0;
@@ -176,12 +176,17 @@ void DoServer(void)
     {
         vecThreads[_i] = std::thread([&, _i]() {
             // Bind RPC handlers
+            for (const auto &i : MainConf.GetSection("libs").Children)
+            {
+                auto pfOnWorkerThreadStart = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnWorkerThreadStart)>(i.Tag, "EXPORT_OnWorkerThreadStart");
+                pfOnWorkerThreadStart(vecCompletionQueues[_i].get());
+            }
             if (iCoNum <= 0)
             {
                 for (const auto &i : MainConf.GetSection("libs").Children)
                 {
-                    auto pfOnWorkerStart = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnWorkerThreadStart)>(i.Tag, "EXPORT_OnWorkerThreadStart");
-                    pfOnWorkerStart(vecCompletionQueues[_i].get());
+                    auto pfOnCoWorkerStart = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnCoroutineWorkerStart)>(i.Tag, "EXPORT_OnCoroutineWorkerStart");
+                    pfOnCoWorkerStart();
                 }
                 ServerContextHelper::SetInstance(new ServerContextHelper);
                 // No coroutine mode
@@ -211,13 +216,13 @@ void DoServer(void)
                     vecWorkers[j].pHandler = nullptr;
                     vecWorkers[j].pStack = oControl.pFreeWorkerStack;
                     oControl.pFreeWorkerStack->push(&vecWorkers[j]);
-                    
+
                     co_create(&vecWorkers[j].co, 0, [&, j, _i]() -> void {
                         co_worker_t &oWorker = vecWorkers[j];
                         for (const auto &i : MainConf.GetSection("libs").Children)
                         {
-                            auto pfOnWorkerStart = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnWorkerThreadStart)>(i.Tag, "EXPORT_OnWorkerThreadStart");
-                            pfOnWorkerStart(vecCompletionQueues[_i].get());
+                            auto pfOnCoWorkerStart = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnCoroutineWorkerStart)>(i.Tag, "EXPORT_OnCoroutineWorkerStart");
+                            pfOnCoWorkerStart();
                         }
                         co_enable_hook_sys();
                         ServerContextHelper::SetInstance(new ServerContextHelper);
@@ -238,7 +243,6 @@ void DoServer(void)
                 }
                 // Start event loop to accept (without hook sys function)
                 // TODO: may be use sys hook to have better performance?
-                stCoEpoll_t *ev = co_get_epoll_ct();
                 co_eventloop(ev, [](void *arg) -> int {
                     co_control_t *pControl = reinterpret_cast<co_control_t *>(arg);
                     while (true)
@@ -256,7 +260,6 @@ void DoServer(void)
                         {
                             GPR_ASSERT(ok == true);
                             GPR_ASSERT(pTag != nullptr);
-                            auto ev = co_get_epoll_ct();
                             auto pWorker = pControl->pFreeWorkerStack->top();
                             pControl->pFreeWorkerStack->pop();
                             GPR_ASSERT(pWorker->pHandler == nullptr);
