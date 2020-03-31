@@ -40,6 +40,18 @@ struct co_control_t
     std::shared_ptr<std::stack<co_worker_t *>> pFreeWorkerStack;
     std::shared_ptr<grpc::ServerCompletionQueue> pCq;
 };
+template <class T>
+int co_create(stCoRoutine_t **co, const stCoRoutineAttr_t *attr, T func)
+{
+    T* _func = new T(func);
+    return co_create(co, attr, [](void *arg) -> void * {
+        T & _func = *reinterpret_cast<T *>(arg);
+        _func();
+        delete &_func;
+        return 0;
+    },
+                     (void *)_func);
+}
 void *co_worker_func(void *arg)
 {
     co_enable_hook_sys();
@@ -164,16 +176,16 @@ void DoServer(void)
     {
         vecThreads[_i] = std::thread([&, _i]() {
             // Bind RPC handlers
-            for (const auto &i : MainConf.GetSection("libs").Children)
-            {
-                auto pfOnWorkerStart = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnWorkerThreadStart)>(i.Tag, "EXPORT_OnWorkerThreadStart");
-                pfOnWorkerStart(vecCompletionQueues[_i].get());
-            }
             if (iCoNum <= 0)
             {
+                for (const auto &i : MainConf.GetSection("libs").Children)
+                {
+                    auto pfOnWorkerStart = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnWorkerThreadStart)>(i.Tag, "EXPORT_OnWorkerThreadStart");
+                    pfOnWorkerStart(vecCompletionQueues[_i].get());
+                }
                 ServerContextHelper::SetInstance(new ServerContextHelper);
                 // No coroutine mode
-                for ( ; ;)
+                for (;;)
                 {
                     bool bOk;
                     void *pTag;
@@ -199,7 +211,29 @@ void DoServer(void)
                     vecWorkers[j].pHandler = nullptr;
                     vecWorkers[j].pStack = oControl.pFreeWorkerStack;
                     oControl.pFreeWorkerStack->push(&vecWorkers[j]);
-                    co_create(&vecWorkers[j].co, 0, co_worker_func, (void *)&vecWorkers[j]);
+                    
+                    co_create(&vecWorkers[j].co, 0, [&, j, _i]() -> void {
+                        co_worker_t &oWorker = vecWorkers[j];
+                        for (const auto &i : MainConf.GetSection("libs").Children)
+                        {
+                            auto pfOnWorkerStart = AlohaIO::DylibManager::GetInstance().GetSymbol<decltype(&EXPORT_OnWorkerThreadStart)>(i.Tag, "EXPORT_OnWorkerThreadStart");
+                            pfOnWorkerStart(vecCompletionQueues[_i].get());
+                        }
+                        co_enable_hook_sys();
+                        ServerContextHelper::SetInstance(new ServerContextHelper);
+                        while (true)
+                        {
+                            if (oWorker.pHandler == nullptr)
+                            {
+                                //no work, sleep
+                                co_yield_ct();
+                                continue;
+                            }
+                            oWorker.pHandler->Proceed();
+                            oWorker.pHandler = nullptr;
+                            oWorker.pStack->push(&oWorker);
+                        }
+                    });
                     co_resume(vecWorkers[j].co);
                 }
                 // Start event loop to accept (without hook sys function)
@@ -207,34 +241,39 @@ void DoServer(void)
                 stCoEpoll_t *ev = co_get_epoll_ct();
                 co_eventloop(ev, [](void *arg) -> int {
                     co_control_t *pControl = reinterpret_cast<co_control_t *>(arg);
-                    if (pControl->pFreeWorkerStack->empty())
+                    while (true)
                     {
-                        return 0;
-                    }
-                    bool ok;
-                    void *pTag;
+                        if (pControl->pFreeWorkerStack->empty())
+                        {
+                            return 0;
+                        }
+                        bool ok;
+                        void *pTag;
 
-                    switch (pControl->pCq->AsyncNext(&pTag, &ok, gpr_timespec{0, 100, GPR_TIMESPAN}))
-                    {
-                    case grpc::CompletionQueue::NextStatus::GOT_EVENT:
-                    {
-                        GPR_ASSERT(ok == true);
-                        GPR_ASSERT(pTag != nullptr);
-                        auto ev = co_get_epoll_ct();
-                        auto pWorker = pControl->pFreeWorkerStack->top();
-                        pControl->pFreeWorkerStack->pop();
-                        GPR_ASSERT(pWorker->pHandler == nullptr);
-                        pWorker->pHandler = reinterpret_cast<AsyncRpcHandler *>(pTag);
-                        co_resume(pWorker->co);
-                        break;
+                        switch (pControl->pCq->AsyncNext(&pTag, &ok, gpr_timespec{0, 1, GPR_TIMESPAN}))
+                        {
+                        case grpc::CompletionQueue::NextStatus::GOT_EVENT:
+                        {
+                            GPR_ASSERT(ok == true);
+                            GPR_ASSERT(pTag != nullptr);
+                            auto ev = co_get_epoll_ct();
+                            auto pWorker = pControl->pFreeWorkerStack->top();
+                            pControl->pFreeWorkerStack->pop();
+                            GPR_ASSERT(pWorker->pHandler == nullptr);
+                            pWorker->pHandler = reinterpret_cast<AsyncRpcHandler *>(pTag);
+                            co_resume(pWorker->co);
+                            break;
+                        }
+                        case grpc::CompletionQueue::NextStatus::SHUTDOWN:
+                            return -1;
+                        case grpc::CompletionQueue::NextStatus::TIMEOUT:
+                            return 0;
+                        }
                     }
-                    case grpc::CompletionQueue::NextStatus::SHUTDOWN:
-                        return -1;
-                    case grpc::CompletionQueue::NextStatus::TIMEOUT:
-                        break;
-                    }
+
                     return 0;
-                }, (void *)&oControl);
+                },
+                             (void *)&oControl);
             }
         });
     }
