@@ -196,7 +196,7 @@ void DoServer(void)
                     void *pTag;
                     if (vecCompletionQueues[_i]->Next(&pTag, &bOk) == false)
                         break;
-                    GPR_ASSERT(bOk == true);
+                    //GPR_ASSERT(bOk == true);
                     GPR_ASSERT(pTag != nullptr);
                     reinterpret_cast<AsyncRpcHandler *>(pTag)->Proceed();
                 }
@@ -259,7 +259,7 @@ void DoServer(void)
                         {
                         case grpc::CompletionQueue::NextStatus::GOT_EVENT:
                         {
-                            GPR_ASSERT(ok == true);
+                            //GPR_ASSERT(ok == true);
                             GPR_ASSERT(pTag != nullptr);
                             auto pWorker = pControl->pFreeWorkerStack->top();
                             pControl->pFreeWorkerStack->pop();
