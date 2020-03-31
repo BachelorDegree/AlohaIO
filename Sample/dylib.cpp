@@ -22,13 +22,12 @@ grpc::Service * EXPORT_GetGrpcServiceInstance(void)
 
 void EXPORT_OnWorkerThreadStart(grpc::ServerCompletionQueue *cq)
 {
-    SayHelloServiceImpl::SetInstance(new SayHelloServiceImpl);
-    SayHelloServiceImpl::GetInstance()->BeforeWorkerStart();
     // Bind handlers
     new SayHelloHandler(&service, cq);
 }
 
 void EXPORT_OnCoroutineWorkerStart(void)
 {
-
+    SayHelloServiceImpl::SetInstance(new SayHelloServiceImpl);
+    SayHelloServiceImpl::GetInstance()->BeforeWorkerStart();
 }
