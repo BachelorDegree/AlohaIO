@@ -243,6 +243,7 @@ void DoServer(void)
                 }
                 // Start event loop to accept (without hook sys function)
                 // TODO: may be use sys hook to have better performance?
+                stCoEpoll_t *ev = co_get_epoll_ct();
                 co_eventloop(ev, [](void *arg) -> int {
                     co_control_t *pControl = reinterpret_cast<co_control_t *>(arg);
                     while (true)
