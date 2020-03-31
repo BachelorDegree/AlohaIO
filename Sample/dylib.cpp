@@ -27,3 +27,8 @@ void EXPORT_OnWorkerThreadStart(grpc::ServerCompletionQueue *cq)
     // Bind handlers
     new SayHelloHandler(&service, cq);
 }
+
+void EXPORT_OnCoroutineWorkerStart(void)
+{
+
+}
