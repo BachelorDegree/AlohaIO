@@ -3,7 +3,7 @@
 #include <csignal>
 #include <cstdlib>
 #include <unistd.h>
-#include <stack>
+#include <queue>
 #include <grpc/grpc.h>
 #include <grpc/impl/codegen/gpr_types.h>
 #include <spdlog/spdlog.h>
@@ -33,11 +33,11 @@ struct co_worker_t
 {
     stCoRoutine_t *co;
     AsyncRpcHandler *pHandler;
-    std::shared_ptr<std::stack<co_worker_t *>> pStack;
+    std::shared_ptr<std::queue<co_worker_t *>> pQueue;
 };
 struct co_control_t
 {
-    std::shared_ptr<std::stack<co_worker_t *>> pFreeWorkerStack;
+    std::shared_ptr<std::queue<co_worker_t *>> pFreeWorkerQueue;
     std::shared_ptr<grpc::ServerCompletionQueue> pCq;
 };
 template <class T>
@@ -67,7 +67,7 @@ void *co_worker_func(void *arg)
         }
         pWorker->pHandler->Proceed();
         pWorker->pHandler = nullptr;
-        pWorker->pStack->push(pWorker);
+        pWorker->pQueue->push(pWorker);
     }
 }
 
@@ -207,15 +207,15 @@ void DoServer(void)
                 // Initialize co workers
                 co_control_t oControl;
                 oControl.pCq = vecCompletionQueues[_i];
-                oControl.pFreeWorkerStack = std::make_shared<std::stack<co_worker_t *>>();
+                oControl.pFreeWorkerQueue = std::make_shared<std::queue<co_worker_t *>>();
                 std::vector<co_worker_t> vecWorkers;
                 vecWorkers.resize(iCoNum);
                 co_aio_init_ct(); // Initialize colib AIO
                 for (int j = 0; j < iCoNum; j++)
                 {
                     vecWorkers[j].pHandler = nullptr;
-                    vecWorkers[j].pStack = oControl.pFreeWorkerStack;
-                    oControl.pFreeWorkerStack->push(&vecWorkers[j]);
+                    vecWorkers[j].pQueue = oControl.pFreeWorkerQueue;
+                    oControl.pFreeWorkerQueue->push(&vecWorkers[j]);
 
                     co_create(&vecWorkers[j].co, 0, [&, j, _i]() -> void {
                         co_worker_t &oWorker = vecWorkers[j];
@@ -236,7 +236,7 @@ void DoServer(void)
                             }
                             oWorker.pHandler->Proceed();
                             oWorker.pHandler = nullptr;
-                            oWorker.pStack->push(&oWorker);
+                            oWorker.pQueue->push(&oWorker);
                         }
                     });
                     co_resume(vecWorkers[j].co);
@@ -248,7 +248,7 @@ void DoServer(void)
                     co_control_t *pControl = reinterpret_cast<co_control_t *>(arg);
                     while (true)
                     {
-                        if (pControl->pFreeWorkerStack->empty())
+                        if (pControl->pFreeWorkerQueue->empty())
                         {
                             return 0;
                         }
@@ -261,8 +261,8 @@ void DoServer(void)
                         {
                             //GPR_ASSERT(ok == true);
                             GPR_ASSERT(pTag != nullptr);
-                            auto pWorker = pControl->pFreeWorkerStack->top();
-                            pControl->pFreeWorkerStack->pop();
+                            auto pWorker = pControl->pFreeWorkerQueue->front();
+                            pControl->pFreeWorkerQueue->pop();
                             GPR_ASSERT(pWorker->pHandler == nullptr);
                             pWorker->pHandler = reinterpret_cast<AsyncRpcHandler *>(pTag);
                             co_resume(pWorker->co);
