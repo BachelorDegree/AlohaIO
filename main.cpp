@@ -71,6 +71,17 @@ void *co_worker_func(void *arg)
     }
 }
 
+class NoReusePortOption : public ::grpc::ServerBuilderOption
+{
+public:
+    void UpdateArguments(::grpc::ChannelArguments* args) override
+    {
+        args->SetInt(GRPC_ARG_ALLOW_REUSEPORT, 0);
+    }
+
+    void UpdatePlugins(std::vector<std::unique_ptr<::grpc::ServerBuilderPlugin>> *plugins) override { }
+};
+
 int main(int argc, char *argv[])
 {
     int iMainRet = EXIT_FAILURE;
@@ -139,6 +150,10 @@ void DoServer(void)
 
     auto sListenIpPort = MainConf.GetKV("server", "bind_ip").append(":").append(MainConf.GetKV("server", "bind_port"));
     oServerBuilder.AddListeningPort(sListenIpPort, grpc::InsecureServerCredentials());
+    if (atoi(MainConf.GetKV("server", "so_reuseport").c_str()) == 0)
+    {
+        oServerBuilder.SetOption(std::unique_ptr<::grpc::ServerBuilderOption>(new NoReusePortOption));
+    }
     for (const auto &oBizLib : MainConf.GetSection("libs").Children)
     {
         auto sLibraryName = oBizLib.Tag;
