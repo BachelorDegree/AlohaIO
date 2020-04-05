@@ -13,6 +13,7 @@
 #include <grpcpp/security/server_credentials.h>
 
 #include "Util/DaemonUtil.hpp"
+#include "Util/SetLogLevel.hpp"
 #include "Util/DylibManager.hpp"
 #include "Sample/dylib_export.h"
 #include "Sample/AsyncRpcHandler.hpp"
@@ -100,6 +101,11 @@ int main(int argc, char *argv[])
             break;
         }
 
+        if (MainConf.HasKV("server", "log_level"))
+        {
+            SetLogLevel(MainConf.GetKV("server", "log_level").c_str());
+        }
+
         if (!MainConf.HasSection("libs"))
         {
             spdlog::error("{} doesn't have section `libs`", argv[1]);
@@ -136,7 +142,7 @@ int main(int argc, char *argv[])
 
 void DoServer(void)
 {
-    // Name service
+    // Naming service
     if (MainConf.HasSection("satellite"))
     {
         spdlog::info("Satellite server count: {}", MainConf.GetSection("satellite\\servers").Pairs.size());
