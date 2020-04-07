@@ -12,8 +12,8 @@
 #include <grpcpp/server_context.h>
 #include <grpcpp/security/server_credentials.h>
 
+#include "Util/SetSpdlog.hpp"
 #include "Util/DaemonUtil.hpp"
-#include "Util/SetLogLevel.hpp"
 #include "Util/DylibManager.hpp"
 #include "Sample/dylib_export.h"
 #include "Sample/AsyncRpcHandler.hpp"
@@ -101,10 +101,7 @@ int main(int argc, char *argv[])
             break;
         }
 
-        if (MainConf.HasKV("server", "log_level"))
-        {
-            SetLogLevel(MainConf.GetKV("server", "log_level").c_str());
-        }
+        SetSpdlog(MainConf);
 
         if (!MainConf.HasSection("libs"))
         {
