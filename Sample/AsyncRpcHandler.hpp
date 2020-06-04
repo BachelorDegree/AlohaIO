@@ -30,6 +30,7 @@ public:
     void SetStatusFinish(void) { status = Status::FINISH; }
     void BeforeProcess(void)
     {
+        this->SetInterfaceName();
         ServerContextHelper::GetInstance()->SetCalleeInterfaceName(this->GetInterfaceName());
         ServerContextHelper::GetInstance()->BindContext(ctx);
     }
