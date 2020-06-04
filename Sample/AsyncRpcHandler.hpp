@@ -4,8 +4,8 @@
 #include "coredeps/ContextHelper.hpp"
 namespace grpc
 {
-class ServerContext;
-class ServerCompletionQueue;
+    class ServerContext;
+    class ServerCompletionQueue;
 } // namespace grpc
 
 class AsyncRpcHandler
@@ -28,7 +28,11 @@ public:
     void SetStatusCreate(void) { status = Status::CREATE; }
     void SetStatusProcess(void) { status = Status::PROCESS; }
     void SetStatusFinish(void) { status = Status::FINISH; }
-    void BeforeProcess(void) { ServerContextHelper::GetInstance()->BindContext(ctx); }
+    void BeforeProcess(void)
+    {
+        ServerContextHelper::GetInstance()->SetCalleeInterfaceName(this->GetInterfaceName());
+        ServerContextHelper::GetInstance()->BindContext(ctx);
+    }
     void SetReturnCode(int iRet) { ServerContextHelper::GetInstance()->SetReturnCode(iRet); }
 
 protected:

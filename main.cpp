@@ -22,6 +22,8 @@
 #include <colib/co_routine.h>
 #include <colib/co_routine_inner.h>
 #include <colib/co_routine_specific.h>
+
+#include "coredeps/MonitorClient.hpp"
 #include "coredeps/ContextHelper.hpp"
 #include "coredeps/TfcConfigCodec.hpp"
 #include "coredeps/SatelliteClient.hpp"
@@ -45,13 +47,14 @@ template <class T>
 int co_create(stCoRoutine_t **co, const stCoRoutineAttr_t *attr, T func)
 {
     T *_func = new T(func);
-    return co_create(co, attr, [](void *arg) -> void * {
-        T &_func = *reinterpret_cast<T *>(arg);
-        _func();
-        delete &_func;
-        return 0;
-    },
-                     (void *)_func);
+    return co_create(
+        co, attr, [](void *arg) -> void * {
+            T &_func = *reinterpret_cast<T *>(arg);
+            _func();
+            delete &_func;
+            return 0;
+        },
+        (void *)_func);
 }
 void *co_worker_func(void *arg)
 {
@@ -75,12 +78,12 @@ void *co_worker_func(void *arg)
 class NoReusePortOption : public ::grpc::ServerBuilderOption
 {
 public:
-    void UpdateArguments(::grpc::ChannelArguments* args) override
+    void UpdateArguments(::grpc::ChannelArguments *args) override
     {
         args->SetInt(GRPC_ARG_ALLOW_REUSEPORT, 0);
     }
 
-    void UpdatePlugins(std::vector<std::unique_ptr<::grpc::ServerBuilderPlugin>> *plugins) override { }
+    void UpdatePlugins(std::vector<std::unique_ptr<::grpc::ServerBuilderPlugin>> *plugins) override {}
 };
 
 int main(int argc, char *argv[])
@@ -147,6 +150,15 @@ void DoServer(void)
         {
             SatelliteClient::GetInstance().SetServer(i.Value);
         }
+    }
+    // Monitor
+    if (MainConf.HasSection("monitor"))
+    {
+        auto strIpPort = MainConf.GetKV("monitor", "server");
+        auto strId = MainConf.GetKV("monitor", "myid");
+        MonitorClient::GetInstance()->SetServer(strIpPort);
+        MonitorClient::GetInstance()->SetMyID(atoi(strId.c_str()));
+        MonitorClient::GetInstance()->Start();
     }
 
     grpc::ServerBuilder oServerBuilder;
@@ -262,40 +274,41 @@ void DoServer(void)
                 // Start event loop to accept (without hook sys function)
                 // TODO: may be use sys hook to have better performance?
                 stCoEpoll_t *ev = co_get_epoll_ct();
-                co_eventloop(ev, [](void *arg) -> int {
-                    co_control_t *pControl = reinterpret_cast<co_control_t *>(arg);
-                    while (true)
-                    {
-                        if (pControl->pFreeWorkerQueue->empty())
+                co_eventloop(
+                    ev, [](void *arg) -> int {
+                        co_control_t *pControl = reinterpret_cast<co_control_t *>(arg);
+                        while (true)
                         {
-                            return 0;
-                        }
-                        bool ok;
-                        void *pTag;
+                            if (pControl->pFreeWorkerQueue->empty())
+                            {
+                                return 0;
+                            }
+                            bool ok;
+                            void *pTag;
 
-                        switch (pControl->pCq->AsyncNext(&pTag, &ok, gpr_timespec{0, 1, GPR_TIMESPAN}))
-                        {
-                        case grpc::CompletionQueue::NextStatus::GOT_EVENT:
-                        {
-                            //GPR_ASSERT(ok == true);
-                            GPR_ASSERT(pTag != nullptr);
-                            auto pWorker = pControl->pFreeWorkerQueue->front();
-                            pControl->pFreeWorkerQueue->pop();
-                            GPR_ASSERT(pWorker->pHandler == nullptr);
-                            pWorker->pHandler = reinterpret_cast<AsyncRpcHandler *>(pTag);
-                            co_resume(pWorker->co);
-                            break;
+                            switch (pControl->pCq->AsyncNext(&pTag, &ok, gpr_timespec{0, 1, GPR_TIMESPAN}))
+                            {
+                            case grpc::CompletionQueue::NextStatus::GOT_EVENT:
+                            {
+                                //GPR_ASSERT(ok == true);
+                                GPR_ASSERT(pTag != nullptr);
+                                auto pWorker = pControl->pFreeWorkerQueue->front();
+                                pControl->pFreeWorkerQueue->pop();
+                                GPR_ASSERT(pWorker->pHandler == nullptr);
+                                pWorker->pHandler = reinterpret_cast<AsyncRpcHandler *>(pTag);
+                                co_resume(pWorker->co);
+                                break;
+                            }
+                            case grpc::CompletionQueue::NextStatus::SHUTDOWN:
+                                return -1;
+                            case grpc::CompletionQueue::NextStatus::TIMEOUT:
+                                return 0;
+                            }
                         }
-                        case grpc::CompletionQueue::NextStatus::SHUTDOWN:
-                            return -1;
-                        case grpc::CompletionQueue::NextStatus::TIMEOUT:
-                            return 0;
-                        }
-                    }
 
-                    return 0;
-                },
-                             (void *)&oControl);
+                        return 0;
+                    },
+                    (void *)&oControl);
             }
         });
     }
